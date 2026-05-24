@@ -67,15 +67,3 @@ export function haptic(type: 'light' | 'medium' | 'heavy' = 'light') {
 }
 
 // ── Extra methods ────────────────────────────────────────────
-export async function apiPut(path: string, body: any = {}): Promise<any> {
-  const res = await fetch(`/api${path}`, { method: 'PUT', headers: getHeaders(), body: JSON.stringify(body) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'خطأ');
-  return data;
-}
-export async function apiDelete(path: string): Promise<any> {
-  const res = await fetch(`/api${path}`, { method: 'DELETE', headers: getHeaders() });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'خطأ');
-  return data;
-}
