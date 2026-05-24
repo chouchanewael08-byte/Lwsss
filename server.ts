@@ -110,7 +110,7 @@ if (ENV.NODE_ENV === 'production') {
 }
 
 // ── Telegram Webhook ─────────────────────────────────────────
-function setupBotWebhook(bot: import('node-telegram-bot-api').default) {
+function setupBotWebhook(bot: any) {
   if (ENV.NODE_ENV === 'production' && ENV.WEBHOOK_URL) {
     const webhookPath = `/bot${ENV.BOT_TOKEN}`;
     bot.setWebHook(`${ENV.WEBHOOK_URL}${webhookPath}`);
