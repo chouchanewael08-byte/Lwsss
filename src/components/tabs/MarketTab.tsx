@@ -1,332 +1,161 @@
-import { useState, useEffect, useRef } from 'react';
-import { apiGet, apiPost, haptic } from '../../lib/api.js';
-import { EmptyState } from '../shared/index.js';
-import { ProductModal } from '../shared/ProductModal.js';
+import { useState, useEffect } from 'react';
+import { apiGet, apiPost } from '../../lib/api.js';
+import { PageLoader, EmptyState } from '../shared/components.js';
 import toast from 'react-hot-toast';
-import type { TabName } from '../../App.js';
 
 const CATS = [
-  { id: 'all',            label: 'الكل 🔍' },
-  { id: 'game_account',   label: 'حسابات ألعاب 🎮' },
-  { id: 'subscription',   label: 'اشتراكات رقمية 📺' },
-  { id: 'digital_service',label: 'خدمات 💻' },
-  { id: 'game_currency',  label: 'عملات 💰' },
-  { id: 'social_media',   label: 'سوشيال ميديا 📱' },
+  { id: 'all', label: '🔍 الكل' },
+  { id: 'game_account',    label: '🎮 ألعاب' },
+  { id: 'subscription',    label: '📺 اشتراكات' },
+  { id: 'digital_service', label: '💻 خدمات' },
+  { id: 'game_currency',   label: '💰 عملات' },
+  { id: 'social_media',    label: '📱 سوشيال' },
 ];
 
-const PAY_ICONS: Record<string, string> = {
-  crystals:'💎', usdt:'💵', baridimob:'🏦', ccp:'🏧', binance:'🟡', flexy:'📱'
-};
-
-export default function MarketTab({ user, onNavigate }: { user: any; onNavigate: (t: TabName) => void }) {
-  const [products, setProducts]   = useState<any[]>([]);
-  const [loading,  setLoading]    = useState(true);
-  const [search,   setSearch]     = useState('');
-  const [cat,      setCat]        = useState('all');
-  const [selected, setSelected]   = useState<any>(null);
-  const [buying,   setBuying]     = useState(false);
-  const [coupon,   setCoupon]     = useState('');
-  const [discount, setDiscount]   = useState(0);
-  const [payMethod,setPayMethod]  = useState('crystals');
-  const crystalUSD = 0.01;
+export default function MarketTab({ user, onNavigate }: { user: any; onNavigate: (t: any) => void }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [cat, setCat]           = useState('all');
+  const [search, setSearch]     = useState('');
+  const [selected, setSelected] = useState<any>(null);
 
   useEffect(() => { load(); }, [cat]);
 
   async function load() {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ type: cat === 'all' ? '' : cat, limit: '40' });
-      const d = await apiGet(`/products?${p}`);
-      setProducts(d.products || []);
+      const q = cat !== 'all' ? `?type=${cat}` : '';
+      const d = await apiGet(`/products${q}`);
+      setProducts(d.products || d);
     } catch { toast.error('خطأ في التحميل'); }
     setLoading(false);
   }
 
-  async function validateCoupon(price: number) {
-    if (!coupon) return;
-    try {
-      const d = await apiPost('/products/coupon/validate', { code: coupon, amount: price, storeType: 'market' });
-      setDiscount(d.discount);
-      toast.success(`✅ خصم 💎${d.discount}`);
-    } catch (e: any) { toast.error(e.message); }
-  }
-
-  async function buy(method: string) {
-    if (!selected || buying) return;
-    setBuying(true);
-    haptic('medium');
-    try {
-      await apiPost('/tickets', { productId: selected._id, productType: 'market', paymentMethod: method, couponCode: coupon || null });
-      toast.success('✅ تم إنشاء الصفقة!');
-      setSelected(null);
-      onNavigate('escrow');
-    } catch (e: any) { toast.error(e.message); }
-    setBuying(false);
-  }
-
-  const filtered = search
-    ? products.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || p.description?.toLowerCase().includes(search.toLowerCase()))
-    : products;
+  const filtered = products.filter(p =>
+    !search || p.title.includes(search) || p.sellerName?.includes(search)
+  );
 
   return (
-    <div className="h-full flex flex-col bg-mkt">
-
-      {/* ── Header ── */}
-      <div className="mkt-header">
-        <div className="mkt-brand">
-          <div className="mkt-logo">🏪</div>
-          <div>
-            <div className="mkt-name">السوق الرقمي</div>
-            <div className="mkt-sub">سوق آمن 100% بنظام إيسكرو</div>
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Header */}
+      <div className="tab-header">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 17, fontWeight: 800 }} className="grad">🛒 السوق الرقمي</span>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>💎{user?.crystals || 0}</span>
         </div>
-        <div className="mkt-search-wrap">
-          <span className="mkt-search-icon">🔍</span>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="ابحث عن: حساب فالورانت، شدات ببجي..."
-            className="mkt-search"
-          />
-          {search && <button className="mkt-search-clear" onClick={() => setSearch('')}>✕</button>}
-        </div>
-        <div className="mkt-cats">
+        <input className="inp" placeholder="🔍 ابحث عن منتج..." value={search} onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
           {CATS.map(c => (
-            <button key={c.id} onClick={() => setCat(c.id)}
-              className={`mkt-cat ${cat === c.id ? 'mkt-cat-active' : ''}`}>
+            <button key={c.id} onClick={() => setCat(c.id)} className="btn btn-sm"
+              style={{ flexShrink: 0, background: cat === c.id ? 'linear-gradient(135deg,#8B5CF6,#6D28D9)' : 'var(--card2)', color: cat === c.id ? '#fff' : 'var(--text2)', border: '1px solid var(--border)' }}>
               {c.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* ── List ── */}
-      <div className="flex-1 overflow-y-auto scrollable mkt-list">
-        {loading ? (
-          [1,2,3].map(i => <div key={i} className="mkt-skeleton" />)
-        ) : filtered.length === 0 ? (
-          <EmptyState icon="🔍" title="لا توجد منتجات" subtitle="جرب تغيير الفلاتر أو البحث" />
-        ) : (
-          filtered.map(p => <ProductCard key={p._id} p={p} crystalUSD={crystalUSD}
-            onOpen={() => { haptic(); setSelected(p); setDiscount(0); setCoupon(''); }} />)
+      {/* Products */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 8px' }}>
+        {loading ? <PageLoader /> : filtered.length === 0 ? <EmptyState icon="📭" text="لا توجد منتجات" /> : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {filtered.map(p => <ProductCard key={p._id} p={p} onClick={() => setSelected(p)} />)}
+          </div>
         )}
       </div>
 
-      {/* ── Modal ── */}
-      {selected && (
-        <ProductDetailModal
-          product={selected}
-          discount={discount}
-          coupon={coupon}
-          onCouponChange={setCoupon}
-          onValidateCoupon={() => validateCoupon(selected.price)}
-          onBuy={buy}
-          onClose={() => setSelected(null)}
-          buying={buying}
-          crystalUSD={crystalUSD}
-        />
-      )}
+      {selected && <ProductModal p={selected} user={user} onClose={() => setSelected(null)} onNavigate={onNavigate} />}
     </div>
   );
 }
 
-/* ──────────────────────────────────────────
-   Product Card (list item)
-────────────────────────────────────────── */
-function ProductCard({ p, crystalUSD, onOpen }: { p: any; crystalUSD: number; onOpen: () => void }) {
-  const usd = (p.price * crystalUSD).toFixed(2);
-  const hasDiscount = p.discountPercent > 0;
-  const originalPrice = hasDiscount ? Math.ceil(p.price / (1 - p.discountPercent / 100)) : null;
+function ProductCard({ p, onClick }: { p: any; onClick: () => void }) {
+  const disc = p.discountPercent > 0;
+  const finalPrice = disc ? Math.floor(p.price * (1 - p.discountPercent / 100)) : p.price;
+  return (
+    <div className="card fade-in" onClick={onClick} style={{ cursor: 'pointer', overflow: 'hidden', position: 'relative' }}>
+      {p.isFeatured && <div style={{ position: 'absolute', top: 6, right: 6, fontSize: 10, background: '#F59E0B', color: '#000', borderRadius: 6, padding: '2px 6px', fontWeight: 700 }}>⭐ مميز</div>}
+      {disc && <div style={{ position: 'absolute', top: 6, left: 6, fontSize: 10, background: '#EF4444', color: '#fff', borderRadius: 6, padding: '2px 6px', fontWeight: 700 }}>-{p.discountPercent}%</div>}
+      {p.images?.[0]
+        ? <img src={p.images[0]} alt="" style={{ width: '100%', height: 90, objectFit: 'cover' }} />
+        : <div style={{ height: 90, background: 'linear-gradient(135deg,#1a0533,#001a33)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>📦</div>}
+      <div style={{ padding: '10px 10px 12px' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.title}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            {disc && <div style={{ fontSize: 10, color: 'var(--text3)', textDecoration: 'line-through' }}>💎{p.price}</div>}
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#8B5CF6' }}>💎{finalPrice}</div>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text3)' }}>👁 {p.viewsCount || 0}</div>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 4 }}>🏪 {p.sellerName}</div>
+      </div>
+    </div>
+  );
+}
+
+function ProductModal({ p, user, onClose, onNavigate }: { p: any; user: any; onClose: () => void; onNavigate: (t: any) => void }) {
+  const [method, setMethod]   = useState('crystals');
+  const [buying, setBuying]   = useState(false);
+  const disc      = p.discountPercent > 0;
+  const finalPrice = disc ? Math.floor(p.price * (1 - p.discountPercent / 100)) : p.price;
+  const isMine    = p.sellerId === user?.telegramId;
+
+  async function buy() {
+    if (isMine) return toast.error('لا يمكنك شراء منتجك');
+    setBuying(true);
+    try {
+      const d = await apiPost('/tickets', { productId: p._id, productType: 'market', paymentMethod: method });
+      toast.success('✅ تم إنشاء الطلب!');
+      onClose(); onNavigate('escrow');
+    } catch (e: any) { toast.error(e.message); }
+    setBuying(false);
+  }
 
   return (
-    <div className="mktcard" onClick={onOpen}>
-      {/* Image / Video preview */}
-      <div className="mktcard-media">
-        {p.images?.[0]
-          ? <img src={p.images[0]} className="mktcard-img" alt="" loading="lazy" />
-          : <div className="mktcard-noimg">
-              {p.type === 'game_account' ? '🎮' : p.type === 'subscription' ? '📺' : p.type === 'game_currency' ? '💰' : p.type === 'social_media' ? '📱' : '💻'}
-            </div>
-        }
-        {/* Badges */}
-        <div className="mktcard-badges">
-          {p.isTrend    && <span className="mktcard-badge mktcard-badge-fire">🔥 ترند</span>}
-          {p.isFeatured && <span className="mktcard-badge mktcard-badge-star">⭐ مميز</span>}
-          {hasDiscount  && <span className="mktcard-badge mktcard-badge-disc">-{p.discountPercent}%</span>}
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
+      <div className="card fade-in" onClick={e => e.stopPropagation()} style={{ width: '100%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '20px 20px 0 0', padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{p.title}</div>
+            <div style={{ fontSize: 12, color: 'var(--text2)' }}>🏪 {p.sellerName}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 20, cursor: 'pointer' }}>✕</button>
         </div>
-        {/* Category */}
-        <span className="mktcard-cat">{
-          p.type === 'game_account' ? '🎮 حسابات ألعاب'
-          : p.type === 'subscription' ? '📺 اشتراكات'
-          : p.type === 'game_currency' ? '💰 عملات'
-          : p.type === 'social_media' ? '📱 سوشيال'
-          : p.type === 'digital_service' ? '💻 خدمات'
-          : '📦 منتج'
-        }</span>
-        {/* Video indicator */}
-        {p.videos?.length > 0 && <span className="mktcard-video-badge">▶ فيديو</span>}
-      </div>
 
-      {/* Body */}
-      <div className="mktcard-body">
-        <div className="mktcard-title">{p.title}</div>
-        {p.description && <div className="mktcard-desc">{p.description.slice(0, 90)}{p.description.length > 90 ? '...' : ''}</div>}
+        {p.images?.[0] && <img src={p.images[0]} alt="" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 12, marginBottom: 14 }} />}
 
-        {/* Payment tags */}
-        {p.acceptedPayments?.length > 0 && (
-          <div className="mktcard-pays">
-            {p.acceptedPayments.slice(0, 4).map((m: string) => (
-              <span key={m} className="mktcard-pay">{PAY_ICONS[m] || '💳'} {m === 'baridimob' ? 'بريدي' : m === 'crystals' ? 'كريستال' : m}</span>
+        <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>{p.description}</div>
+
+        <div className="card2" style={{ padding: 12, marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: 'var(--text2)', fontSize: 13 }}>السعر</span>
+            <span style={{ fontWeight: 800, color: 'var(--purple)', fontSize: 16 }}>💎{finalPrice}</span>
+          </div>
+          {p.warrantyPeriod && p.warrantyPeriod !== 'بدون ضمان' && (
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--text2)', fontSize: 13 }}>الضمان</span>
+              <span style={{ fontSize: 13, color: 'var(--green)' }}>✅ {p.warrantyPeriod}</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>طريقة الدفع:</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {['crystals','baridimob','ccp','usdt','binance'].map(m => (
+              <button key={m} onClick={() => setMethod(m)} className="btn btn-sm"
+                style={{ background: method === m ? 'linear-gradient(135deg,#8B5CF6,#6D28D9)' : 'var(--card2)', color: method === m ? '#fff' : 'var(--text2)', border: '1px solid var(--border)' }}>
+                {m === 'crystals' ? '💎' : m === 'baridimob' ? '🏦' : m === 'ccp' ? '🏧' : m === 'usdt' ? '💵' : '🟡'} {m}
+              </button>
             ))}
           </div>
-        )}
-
-        {/* Price row */}
-        <div className="mktcard-price-row">
-          <div>
-            {hasDiscount && <div className="mktcard-original">💎{originalPrice?.toLocaleString()}</div>}
-            <div className="mktcard-price">💎 {p.price.toLocaleString()}</div>
-            <div className="mktcard-usd">${usd}</div>
-          </div>
-          <div className="mktcard-views">👁 {p.viewsCount || 0}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ──────────────────────────────────────────
-   Product Detail Modal (full redesign)
-────────────────────────────────────────── */
-function ProductDetailModal({ product, discount, coupon, onCouponChange, onValidateCoupon, onBuy, onClose, buying, crystalUSD }: any) {
-  const [mediaIdx, setMediaIdx] = useState(0);
-  const [payMethod, setPayMethod] = useState('crystals');
-  const [visible, setVisible] = useState(false);
-  const finalPrice = product.price - discount;
-  const usd = (finalPrice * crystalUSD).toFixed(2);
-
-  // All media: images + videos
-  const allMedia = [
-    ...(product.images || []).map((url: string) => ({ type: 'image', url })),
-    ...(product.videos || []).map((url: string) => ({ type: 'video', url })),
-  ];
-
-  useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
-
-  function close() { setVisible(false); setTimeout(onClose, 320); }
-
-  const PAY_METHODS = [
-    { id: 'crystals',  label: 'كريستال',  icon: '💎', color: '#06b6d4' },
-    { id: 'usdt',      label: 'USDT',     icon: '💵', color: '#10b981' },
-    { id: 'baridimob', label: 'بريدي',    icon: '🏦', color: '#6366f1' },
-    { id: 'ccp',       label: 'CCP',      icon: '🏧', color: '#f59e0b' },
-    { id: 'binance',   label: 'Binance',  icon: '🟡', color: '#eab308' },
-    { id: 'flexy',     label: 'Flexy',    icon: '📱', color: '#ec4899' },
-  ];
-
-  return (
-    <div className="pm-overlay" style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.3s' }} onClick={close}>
-      <div className="pm-sheet"
-        style={{ transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.35s cubic-bezier(0.32,0.72,0,1)' }}
-        onClick={e => e.stopPropagation()}>
-
-        <div className="pm-handle" />
-
-        {/* Header */}
-        <div className="pm-header">
-          <div style={{ flex: 1 }}>
-            <div className="pm-tag">{product.type || 'منتج'}</div>
-            <h2 className="pm-title">{product.title}</h2>
-          </div>
-          <button className="pm-close" onClick={close}>✕</button>
         </div>
 
-        {/* Media Gallery (images + videos) */}
-        {allMedia.length > 0 && (
-          <div className="pm-gallery">
-            {allMedia[mediaIdx].type === 'image'
-              ? <img src={allMedia[mediaIdx].url} className="pm-gallery-img" alt="" />
-              : <video src={allMedia[mediaIdx].url} className="pm-gallery-img" controls playsInline preload="metadata" />
-            }
-            {allMedia.length > 1 && (
-              <div className="pm-media-strip">
-                {allMedia.map((m: any, i: number) => (
-                  <button key={i} onClick={() => setMediaIdx(i)}
-                    className={`pm-media-thumb ${i === mediaIdx ? 'pm-media-thumb-active' : ''}`}>
-                    {m.type === 'image'
-                      ? <img src={m.url} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }} />
-                      : <span style={{ fontSize: 20 }}>▶</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Description */}
-        {product.description && <p className="pm-desc">{product.description}</p>}
-
-        {/* Stats */}
-        <div className="pm-stats">
-          {([
-            ['👁', product.viewsCount ?? 0,         'مشاهدة'],
-            ['🛡', product.warrantyPeriod || 'لا',  'ضمان'],
-            ['⭐', product.sellerLevel || 'عادي',   'البائع'],
-          ] as [string,any,string][]).map(([icon, val, label]) => (
-            <div key={label} className="pm-stat">
-              <span className="pm-stat-icon">{icon}</span>
-              <span className="pm-stat-val">{val}</span>
-              <span className="pm-stat-label">{label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Coupon */}
-        <div className="pm-coupon-row">
-          <input value={coupon} onChange={e => onCouponChange(e.target.value)}
-            placeholder="كوبون خصم (اختياري)" className="pm-coupon-input" />
-          <button onClick={onValidateCoupon} className="pm-coupon-btn">تطبيق</button>
-        </div>
-
-        {/* Price */}
-        <div className="pm-price-row">
-          <div>
-            <span className="pm-price-label">السعر النهائي</span>
-            {discount > 0 && <div style={{ fontSize: 11, color: '#64748b', textDecoration: 'line-through' }}>💎{product.price}</div>}
-          </div>
-          <div className="pm-price">
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span className="pm-price-gem">💎</span>
-                <span className="pm-price-num">{finalPrice.toLocaleString()}</span>
-              </div>
-              <div style={{ color: '#10b981', fontSize: 12, fontWeight: 600 }}>${usd}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Payment methods */}
-        <div className="pm-pay-label">اختر طريقة الدفع</div>
-        <div className="pm-pay-grid">
-          {PAY_METHODS.map(m => (
-            <button key={m.id} onClick={() => setPayMethod(m.id)}
-              className={`pm-pay-btn ${payMethod === m.id ? 'pm-pay-active' : ''}`}
-              style={payMethod === m.id ? { '--pm-accent': m.color } as any : {}}>
-              <span className="pm-pay-icon">{m.icon}</span>
-              <span className="pm-pay-text">{m.label}</span>
-              {payMethod === m.id && <span className="pm-pay-check">✓</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Actions */}
-        <div className="pm-actions">
-          <button className="pm-btn-buy" onClick={() => onBuy(payMethod)} disabled={buying}>
-            {buying ? <><span className="pm-spin">⟳</span> جار...</> : <>🛒 &nbsp;شراء الآن</>}
+        {!isMine && (
+          <button className="btn btn-primary" onClick={buy} disabled={buying} style={{ width: '100%', padding: 14, fontSize: 15 }}>
+            {buying ? '⏳ جار الشراء...' : `🛒 شراء الآن — 💎${finalPrice}`}
           </button>
-        </div>
-
-        <div className="pm-escrow">🔐 &nbsp;محمي بنظام الإيسكرو — أموالك محجوزة حتى تتأكد</div>
+        )}
       </div>
     </div>
   );

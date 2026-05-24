@@ -1,3 +1,1 @@
-export { ImageUploader, ChatWindow, ProductCard, SkeletonCard, EmptyState } from './components.js';
-
-export { ProductModal } from './ProductModal.js';
+export { Spinner, PageLoader, EmptyState, StatBox, SectionTitle, Tag } from './components.js';

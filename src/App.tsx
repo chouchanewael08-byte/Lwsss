@@ -2,135 +2,94 @@ import { useState, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
-
 import BottomNav from './components/shared/BottomNav.js';
-import MarketTab from './components/tabs/MarketTab.js';
-import AccountsStoreTab from './components/tabs/AccountsStoreTab.js';
-import PointsStoreTab from './components/tabs/PointsStoreTab.js';
-import MyStoreTab from './components/tabs/MyStoreTab.js';
-import TasksTab from './components/tabs/TasksTab.js';
-import WalletTab from './components/tabs/WalletTab.js';
-import ProfileTab from './components/tabs/ProfileTab.js';
-import EscrowTab from './components/tabs/EscrowTab.js';
-import AuctionTab from './components/tabs/AuctionTab.js';
-import SwapTab from './components/tabs/SwapTab.js';
-import AdminTab from './components/tabs/AdminTab.js';
 import { apiGet, getTgUser } from './lib/api.js';
+import { Spinner } from './components/shared/components.js';
 
-export type TabName = 'market' | 'accounts' | 'points' | 'mystore' | 'tasks' | 'wallet' | 'profile' | 'escrow' | 'auction' | 'swap' | 'admin';
+export type TabName = 'market'|'accounts'|'points'|'mystore'|'tasks'|'wallet'|'profile'|'escrow'|'auction'|'swap'|'admin';
+
+// Lazy imports للأداء
+import MarketTab       from './components/tabs/MarketTab.js';
+import AccountsTab     from './components/tabs/AccountsStoreTab.js';
+import WalletTab       from './components/tabs/WalletTab.js';
+import ProfileTab      from './components/tabs/ProfileTab.js';
+import EscrowTab       from './components/tabs/EscrowTab.js';
+import TasksTab        from './components/tabs/TasksTab.js';
+import MyStoreTab      from './components/tabs/MyStoreTab.js';
+import AuctionTab      from './components/tabs/AuctionTab.js';
+import AdminTab        from './components/tabs/AdminTab.js';
+import PointsStoreTab  from './components/tabs/PointsStoreTab.js';
+import SwapTab         from './components/tabs/SwapTab.js';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabName>('market');
-  const [user, setUser] = useState<any>(null);
+  const [tab, setTab]         = useState<TabName>('market');
+  const [user, setUser]       = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [maintenance, setMaintenance] = useState(false);
-  const [dots, setDots] = useState('');
+  const [error, setError]     = useState('');
 
-  useEffect(() => {
-    loadUser();
-    setupSocket();
-  }, []);
+  useEffect(() => { init(); }, []);
 
-  // أنيميشن نقاط التحميل
-  useEffect(() => {
-    if (!loading) return;
-    const t = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400);
-    return () => clearInterval(t);
-  }, [loading]);
-
-  async function loadUser() {
+  async function init() {
     try {
       const data = await apiGet('/user/me');
       setUser(data);
+      setupSocket(data);
     } catch (e: any) {
-      if (e.message?.includes('صيانة')) setMaintenance(true);
-      // أعد المحاولة مرة واحدة بعد ثانية
-      else {
-        await new Promise(r => setTimeout(r, 1500));
-        try {
-          const data = await apiGet('/user/me');
-          setUser(data);
-        } catch {}
-      }
+      setError(e.message || 'تعذّر تحميل البيانات');
     } finally { setLoading(false); }
   }
 
-  function setupSocket() {
-    const tgUser = getTgUser();
-    if (!tgUser) return;
-    const socket = io('/', { transports: ['websocket'] });
-    // BUG FIX: server يتوقع { userId, initData } مش string مجرد
+  function setupSocket(u: any) {
+    const tg = getTgUser();
+    if (!tg || !window.Telegram?.WebApp?.initData) return;
+    const socket = io({ transports: ['websocket'] });
     socket.on('connect', () => {
-      const initData = (window as any).Telegram?.WebApp?.initData || '';
-      socket.emit('join', { userId: String(tgUser.id), initData });
+      socket.emit('join', { userId: String(tg.id), initData: window.Telegram.WebApp.initData });
     });
-    socket.on('new_chat_message',  () => toast('💬 رسالة جديدة', { icon: '💬' }));
-    socket.on('ticket_updated',    () => toast('🔔 تحديث في صفقة', { icon: '🔔' }));
-    socket.on('ticket_completed',  () => toast.success('✅ اكتملت الصفقة!'));
-    socket.on('deposit_confirmed', (d: any) => toast.success(`✅ تم إيداع 💎${d.amount}`));
-    socket.on('withdrawal_rejected',(d: any) => toast.error(`❌ رُفض السحب: ${d.reason || ''}`));
-    socket.on('product_approved',  (d: any) => toast.success(`✅ قُبل منتجك: ${d.productTitle}`));
-    socket.on('balance_adjusted',  (d: any) => toast(`💰 ${d.amount > 0 ? '+' : ''}${d.amount} ${d.currency}`, { icon: '💰' }));
-    socket.on('new_bid',           (d: any) => toast(`🔨 عرض: 💎${d.amount} — ${d.bidder}`, { icon: '🔨' }));
+    socket.on('new_ticket_message', (d: any) => toast(`💬 رسالة جديدة: ${d.preview}`, { duration: 4000 }));
+    socket.on('deposit_confirmed',  (d: any) => { toast.success(`✅ تم تأكيد الإيداع: 💎${d.amount}`); init(); });
+    socket.on('product_approved',   (d: any) => toast.success(`✅ تمت الموافقة على: ${d.productTitle}`));
+    socket.on('ticket_completed',   ()       => toast.success('🎉 اكتملت الصفقة!'));
   }
 
-  /* ── LOADING ── */
   if (loading) return (
-    <div className="loading-screen">
-      <div className="loading-bg-orb orb1" />
-      <div className="loading-bg-orb orb2" />
-      <div className="loading-content">
-        <div className="loading-logo">🏪</div>
-        <div className="loading-title">Lws Chop</div>
-        <div className="loading-sub">المتجر الرقمي المتكامل</div>
-        <div className="loading-bar-wrap">
-          <div className="loading-bar-fill" />
-        </div>
-        <div className="loading-dots">جار التحميل{dots}</div>
-      </div>
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', gap: 16 }}>
+      <div style={{ fontSize: 48 }}>🏪</div>
+      <div className="grad" style={{ fontSize: 20, fontWeight: 800 }}>السوق الرقمي</div>
+      <Spinner size={28} />
     </div>
   );
 
-  /* ── MAINTENANCE ── */
-  if (maintenance) return (
-    <div className="flex items-center justify-center h-full bg-slate-950 p-6 text-center">
-      <div>
-        <div className="text-6xl mb-4 animate-pulse">🔧</div>
-        <div className="text-white text-xl font-bold mb-2">وضع الصيانة</div>
-        <div className="text-slate-400 text-sm">المتجر تحت الصيانة حالياً. عد قريباً.</div>
-      </div>
+  if (error) return (
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
+      <div style={{ fontSize: 48 }}>⚠️</div>
+      <div style={{ color: 'var(--red)', fontWeight: 700 }}>{error}</div>
+      <button className="btn btn-primary" onClick={init}>إعادة المحاولة</button>
     </div>
   );
 
-  const tabs: Record<TabName, JSX.Element> = {
-    market:   <MarketTab user={user} onNavigate={setActiveTab} />,
-    accounts: <AccountsStoreTab user={user} onNavigate={setActiveTab} />,
-    points:   <PointsStoreTab user={user} />,
-    mystore:  <MyStoreTab user={user} />,
-    tasks:    <TasksTab user={user} onUserUpdate={setUser} />,
-    wallet:   <WalletTab user={user} onUserUpdate={setUser} />,
-    profile:  <ProfileTab user={user} onNavigate={setActiveTab} />,
-    escrow:   <EscrowTab user={user} />,
-    auction:  <AuctionTab user={user} />,
-    swap:     <SwapTab user={user} />,
-    admin:    <AdminTab user={user} />,
+  const props = { user, onUserUpdate: setUser, onNavigate: setTab };
+  const TABS: Record<TabName, React.ReactNode> = {
+    market:   <MarketTab      {...props} />,
+    accounts: <AccountsTab    {...props} />,
+    wallet:   <WalletTab      {...props} />,
+    profile:  <ProfileTab     {...props} />,
+    escrow:   <EscrowTab      {...props} />,
+    tasks:    <TasksTab       {...props} />,
+    mystore:  <MyStoreTab     {...props} />,
+    auction:  <AuctionTab     {...props} />,
+    admin:    <AdminTab       {...props} />,
+    points:   <PointsStoreTab {...props} />,
+    swap:     <SwapTab        {...props} />,
   };
 
   return (
-    <div className="flex flex-col h-full bg-app">
-      <Toaster position="top-center" toastOptions={{
-        style: { background: '#0f1929', color: '#f8fafc', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '14px', fontSize: '13px' },
-        duration: 3000,
-      }} />
-      <div className="flex-1 overflow-hidden">
-        {tabs[activeTab] || tabs.market}
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+      <Toaster position="top-center" toastOptions={{ style: { background: '#1a1a2e', color: '#F1F1F8', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 12, fontSize: 13 } }} />
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }} className="fade-in">
+        {TABS[tab]}
       </div>
-      <BottomNav
-        active={activeTab}
-        onChange={setActiveTab}
-        isAdmin={['admin','owner','moderator'].includes(user?.role)}
-        crystals={user?.crystals}
-      />
+      <BottomNav active={tab} onTab={setTab} user={user} />
     </div>
   );
 }
