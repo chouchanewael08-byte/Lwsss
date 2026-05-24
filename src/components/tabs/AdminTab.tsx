@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { apiGet, apiPost, apiPut } from '../../lib/api.js';
+import { apiGet, apiPost, apiPut, apiDelete } from '../../lib/api.js';
 import { PageLoader, StatBox } from '../shared/components.js';
 import toast from 'react-hot-toast';
 
-type AdminView = 'main'|'users'|'pending'|'disputes'|'settings'|'broadcast';
+type AdminView = 'main'|'users'|'pending'|'disputes'|'settings'|'broadcast'|'deposits'|'coupons';
 
 export default function AdminTab({ user }: { user: any }) {
   const [view, setView]       = useState<AdminView>('main');
@@ -19,6 +19,8 @@ export default function AdminTab({ user }: { user: any }) {
   if (view === 'disputes')  return <DisputesView onBack={() => setView('main')} />;
   if (view === 'settings')  return <SettingsView onBack={() => setView('main')} />;
   if (view === 'broadcast') return <BroadcastView onBack={() => setView('main')} />;
+  if (view === 'deposits')  return <DepositsView  onBack={() => setView('main')} />;
+  if (view === 'coupons')   return <CouponsView   onBack={() => setView('main')} />;
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
@@ -36,6 +38,8 @@ export default function AdminTab({ user }: { user: any }) {
             { id:'pending',   icon:'⏳', label:'مراجعة المنتجات', sub:'موافقة أو رفض' },
             { id:'disputes',  icon:'⚠️', label:'النزاعات',     sub:`${stats?.tickets?.disputed||0} نزاع` },
             { id:'broadcast', icon:'📢', label:'إذاعة رسالة',  sub:'للجميع أو فئة' },
+            { id:'deposits',  icon:'💳', label:'تأكيد الإيداعات', sub:'طلبات معلقة' },
+            { id:'coupons',   icon:'🏷️', label:'الكوبونات',      sub:'إنشاء وإدارة' },
             { id:'settings',  icon:'🔧', label:'الإعدادات',    sub:'أسعار وعمولات' },
           ].map(item => (
             <button key={item.id} onClick={() => setView(item.id as AdminView)} className="card"
@@ -260,6 +264,157 @@ function BroadcastView({ onBack }: { onBack:()=>void }) {
         <button className="btn btn-primary" onClick={send} disabled={sending} style={{ padding:14 }}>
           {sending?'⏳ جار الإرسال...':'📢 إرسال لجميع المستخدمين'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+
+function DepositsView({ onBack }: { onBack: () => void }) {
+  const [deposits, setDeposits] = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [confirming, setConfirming] = useState<string|null>(null);
+  const [manual, setManual] = useState({ userId:'', amount:'' });
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    try { setDeposits(await apiGet('/admin/deposits/pending')); }
+    catch { toast.error('خطأ'); }
+    setLoading(false);
+  }
+
+  async function confirm(tx: any) {
+    setConfirming(tx._id);
+    try {
+      await apiPost('/wallet/admin/confirm-deposit', { userId: tx.userId, amount: tx.amount, reference: tx.reference });
+      toast.success(`✅ تم تأكيد 💎${tx.amount}`);
+      setDeposits(d => d.filter(x => x._id !== tx._id));
+    } catch(e:any) { toast.error(e.message); }
+    setConfirming(null);
+  }
+
+  async function manualAdd() {
+    if (!manual.userId || !manual.amount) return toast.error('أدخل ID والمبلغ');
+    try {
+      await apiPost(`/admin/users/${manual.userId}/adjust-balance`, { amount: +manual.amount, currency: 'crystals', description: 'تأكيد إيداع يدوي' });
+      toast.success(`✅ أضفت 💎${manual.amount} لـ ${manual.userId}`);
+      setManual({ userId:'', amount:'' });
+    } catch(e:any) { toast.error(e.message); }
+  }
+
+  const s: any = { display:'flex', flexDirection:'column', height:'100%' };
+  return (
+    <div style={s}>
+      <div className="glass px-4 py-3 flex-shrink-0" style={{ display:'flex', alignItems:'center', gap:12 }}>
+        <button onClick={onBack} style={{ background:'none', border:'none', color:'var(--purple)', fontSize:14, cursor:'pointer' }}>← رجوع</button>
+        <span style={{ fontWeight:700, color:'#fff' }}>💳 تأكيد الإيداعات ({deposits.length})</span>
+      </div>
+      <div className="flex-1 overflow-y-auto scrollable" style={{ padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+
+        <div className="card p-3" style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          <div style={{ fontSize:12, color:'var(--text2)', fontWeight:600 }}>➕ إضافة يدوية (للإيداعات القديمة)</div>
+          <input value={manual.userId} onChange={e=>setManual(m=>({...m,userId:e.target.value}))} placeholder="Telegram ID" className="input-field text-sm" />
+          <div style={{ display:'flex', gap:8 }}>
+            <input type="number" value={manual.amount} onChange={e=>setManual(m=>({...m,amount:e.target.value}))} placeholder="💎 المبلغ" className="input-field text-sm" style={{ flex:1 }} />
+            <button onClick={manualAdd} className="bg-emerald-600 text-white px-4 rounded-xl text-sm">تأكيد</button>
+          </div>
+        </div>
+
+        {loading
+          ? <div style={{ textAlign:'center', color:'var(--text2)', marginTop:32 }}>جار التحميل...</div>
+          : deposits.length === 0
+            ? <div style={{ textAlign:'center', color:'var(--text2)', marginTop:32 }}>لا توجد إيداعات معلقة ✅</div>
+            : deposits.map(tx => (
+              <div key={tx._id} className="card p-4" style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div>
+                  <div style={{ color:'#fff', fontWeight:700 }}>💎 {tx.amount}</div>
+                  <div style={{ color:'var(--text2)', fontSize:12 }}>ID: {tx.userId}</div>
+                  <div style={{ color:'var(--text2)', fontSize:12 }}>عبر: {tx.paymentMethod || '—'}</div>
+                  {tx.proofImage && <a href={tx.proofImage} target="_blank" rel="noreferrer" style={{ color:'var(--purple)', fontSize:12 }}>📸 إيصال</a>}
+                </div>
+                <button onClick={() => confirm(tx)} disabled={confirming === tx._id}
+                  className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm"
+                  style={{ opacity: confirming === tx._id ? 0.5 : 1 }}>
+                  {confirming === tx._id ? '⏳' : '✅ تأكيد'}
+                </button>
+              </div>
+            ))}
+      </div>
+    </div>
+  );
+}
+
+function CouponsView({ onBack }: { onBack: () => void }) {
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ code:'', discountType:'percent', discountValue:'10', maxUses:'100', expiresAt:'' });
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    try { setCoupons(await apiGet('/coupons/my')); } catch {}
+    setLoading(false);
+  }
+
+  async function create() {
+    if (!form.code || !form.expiresAt) return toast.error('الكود وتاريخ الانتهاء مطلوبان');
+    setCreating(true);
+    try {
+      await apiPost('/coupons', { code: form.code, discountType: form.discountType, discountValue: +form.discountValue, maxUses: +form.maxUses, expiresAt: form.expiresAt });
+      toast.success('✅ تم إنشاء الكوبون');
+      setForm({ code:'', discountType:'percent', discountValue:'10', maxUses:'100', expiresAt:'' });
+      load();
+    } catch(e:any) { toast.error(e.message); }
+    setCreating(false);
+  }
+
+  async function remove(id: string) {
+    try { await apiDelete(`/coupons/${id}`); setCoupons(c => c.filter(x => x._id !== id)); toast.success('تم الحذف'); }
+    catch(e:any) { toast.error(e.message); }
+  }
+
+  const s: any = { display:'flex', flexDirection:'column', height:'100%' };
+  return (
+    <div style={s}>
+      <div className="glass px-4 py-3 flex-shrink-0" style={{ display:'flex', alignItems:'center', gap:12 }}>
+        <button onClick={onBack} style={{ background:'none', border:'none', color:'var(--purple)', fontSize:14, cursor:'pointer' }}>← رجوع</button>
+        <span style={{ fontWeight:700, color:'#fff' }}>🏷️ الكوبونات</span>
+      </div>
+      <div className="flex-1 overflow-y-auto scrollable" style={{ padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+        <div className="card p-4" style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={{ color:'#fff', fontWeight:600 }}>➕ كوبون جديد</div>
+          <input value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'')}))} placeholder="الكود (مثال: SAVE20)" className="input-field text-sm" />
+          <div style={{ display:'flex', gap:8 }}>
+            <select value={form.discountType} onChange={e=>setForm(f=>({...f,discountType:e.target.value}))} className="input-field text-sm" style={{ flex:1 }}>
+              <option value="percent">نسبة %</option>
+              <option value="fixed">مبلغ ثابت 💎</option>
+            </select>
+            <input type="number" value={form.discountValue} onChange={e=>setForm(f=>({...f,discountValue:e.target.value}))} placeholder="القيمة" className="input-field text-sm" style={{ width:80 }} />
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            <input type="number" value={form.maxUses} onChange={e=>setForm(f=>({...f,maxUses:e.target.value}))} placeholder="عدد الاستخدامات" className="input-field text-sm" style={{ flex:1 }} />
+            <input type="date" value={form.expiresAt} onChange={e=>setForm(f=>({...f,expiresAt:e.target.value}))} className="input-field text-sm" style={{ flex:1 }} />
+          </div>
+          <button onClick={create} disabled={creating} className="btn btn-primary" style={{ padding:12 }}>
+            {creating ? '⏳ جار الإنشاء...' : '➕ إنشاء الكوبون'}
+          </button>
+        </div>
+        {!loading && coupons.map(cp => (
+          <div key={cp._id} className="card p-3" style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div>
+              <div style={{ color:'#fff', fontWeight:700 }}>{cp.code}</div>
+              <div style={{ color:'var(--text2)', fontSize:12 }}>
+                {cp.discountType === 'percent' ? `${cp.discountValue}%` : `💎${cp.discountValue}`} — {cp.usedCount}/{cp.maxUses} استخدام
+              </div>
+              <div style={{ color:'var(--text2)', fontSize:11 }}>ينتهي: {new Date(cp.expiresAt).toLocaleDateString('ar')}</div>
+            </div>
+            <button onClick={() => remove(cp._id)} style={{ background:'rgba(239,68,68,0.15)', border:'1px solid rgba(239,68,68,0.3)', color:'#ef4444', padding:'6px 14px', borderRadius:10, cursor:'pointer' }}>🗑️</button>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -197,6 +197,13 @@ router.put('/settings', ...admin, async (req: TgRequest, res: Response) => {
   res.json({ success: true, updated });
 });
 
+
+// ─── Pending Deposits ────────────────────────────────────────
+router.get('/deposits/pending', ...admin, async (_req, res: Response) => {
+  const txs = await Transaction.find({ type: 'deposit_request', status: 'pending' })
+    .sort({ createdAt: -1 }).limit(100).lean();
+  res.json(txs);
+});
 // ─── Logs ─────────────────────────────────────────────────────
 router.get('/logs', ...admin, async (req: TgRequest, res: Response) => {
   const page  = Math.max(1, +((req.query.page as string)||1));
