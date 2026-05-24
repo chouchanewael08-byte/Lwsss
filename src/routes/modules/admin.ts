@@ -70,7 +70,7 @@ router.post('/users/:id/adjust-balance', ...admin, validate(adjustSchema), async
   const wallet = await Wallet.findOneAndUpdate(
     { userId },
     { $inc: { [field]: amount } },
-    { new: true }
+    { new: true, runValidators: true }
   );
   if (!wallet) return res.status(404).json({ error: 'المحفظة غير موجودة' });
   await Transaction.create({ userId, type, amount: Math.abs(amount), currency, status: 'completed', description });

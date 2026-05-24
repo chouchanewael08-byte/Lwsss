@@ -7,13 +7,11 @@ function getInitData(): string {
   return '';
 }
 
-let retryCount = 0;
-
-export async function api(path: string, options: RequestInit = {}): Promise<any> {
+export async function api(path: string, options: RequestInit = {}, _retry = 0): Promise<any> {
   const initData = getInitData();
   
   const headers: Record<string, string> = {
-    'x-telegram-init-data': initData || 'empty',
+    'x-telegram-init-data': initData || '',
   };
   
   if (options.body && !(options.body instanceof FormData)) {
@@ -28,13 +26,10 @@ export async function api(path: string, options: RequestInit = {}): Promise<any>
   const data = await res.json();
   
   // إذا initData مش جاهز بعد، انتظر وأعد المحاولة
-  if (data?.code === 'RELOAD' && retryCount < 3) {
-    retryCount++;
+  if (data?.code === 'RELOAD' && _retry < 3) {
     await new Promise(r => setTimeout(r, 1000));
-    return api(path, options);
+    return api(path, options, _retry + 1);
   }
-  
-  retryCount = 0;
   if (!res.ok) throw new Error(data.error || 'خطأ في الطلب');
   return data;
 }
@@ -48,7 +43,7 @@ export async function apiForm(path: string, formData: FormData, method = 'POST')
   const initData = getInitData();
   const res = await fetch(`/api/v1${path}`, {
     method,
-    headers: { 'x-telegram-init-data': initData || 'empty' },
+    headers: { 'x-telegram-init-data': initData || '' },
     body: formData
   });
   const data = await res.json();

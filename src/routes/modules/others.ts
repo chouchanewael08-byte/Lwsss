@@ -1,8 +1,9 @@
 import { Router, Response } from 'express';
 import { validateTelegramInitData, loadUser, ensureAdmin, TgRequest } from '../../middleware/auth.js';
-import { PointsItem, User, Wallet, Coupon, Auction, Swap } from '../../models/index.js';
+import { PointsItem, User, Wallet, Coupon, Auction, Swap, Transaction } from '../../models/index.js';
 import { upload, uploadToCloudinary } from '../../lib/upload.js';
 import { decryptCredentials, encryptCredentials } from '../../lib/crypto.js';
+import { bidLimit } from '../../lib/rateLimits.js';
 import { getOrCreateWallet, getSetting, emitToUser, getCrystalPriceUSD, getCommissionPercent } from '../../lib/helpers.js';
 
 const auth = [validateTelegramInitData, loadUser];
@@ -35,9 +36,8 @@ pointsRouter.post('/:id/redeem', auth, async (req: TgRequest, res: Response) => 
       }
     } else { await PointsItem.findByIdAndUpdate(req.params.id, { $inc: { soldCount: 1 } }); }
     const wallet = await getOrCreateWallet(req.dbUser.telegramId);
-    wallet.stars = Math.max(0, wallet.stars - item.starsCost);
-    wallet.transactions.push({ type: 'stars_spent', amount: item.starsCost, currency: 'stars', status: 'completed', description: `استبدال: ${item.title}`, timestamp: new Date() });
-    await wallet.save();
+    await Wallet.findOneAndUpdate({ userId: req.dbUser.telegramId }, { $inc: { stars: -item.starsCost } });
+    await Transaction.create({ userId: req.dbUser.telegramId, type: 'stars_spent', amount: item.starsCost, currency: 'stars', status: 'completed', description: `استبدال: ${item.title}` });
     const credentials = item.credentialsEncrypted ? decryptCredentials(item.credentialsEncrypted) : null;
     res.json({ success: true, credentials, message: `✅ تم استبدال ${item.title}!` });
   } catch (err) { console.error('[redeem]', err); res.status(500).json({ error: 'خطأ في الاستبدال' }); }
@@ -143,7 +143,7 @@ auctionRouter.post('/', auth, async (req: TgRequest, res: Response) => {
   } catch { res.status(500).json({ error: 'خطأ' }); }
 });
 
-auctionRouter.post('/:id/bid', auth, async (req: TgRequest, res: Response) => {
+auctionRouter.post('/:id/bid', auth, bidLimit, async (req: TgRequest, res: Response) => {
   try {
     const { amount } = req.body;
     if (!amount || +amount <= 0) return res.status(400).json({ error: 'مبلغ غير صحيح' });

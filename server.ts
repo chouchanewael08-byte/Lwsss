@@ -46,7 +46,7 @@ const httpServer = createServer(app);
 
 // ── Socket.io ─────────────────────────────────────────────────
 const io = new SocketServer(httpServer, {
-  cors: { origin: ENV.APP_URL, credentials: true },
+  cors: { origin: [ENV.APP_URL, 'https://web.telegram.org', 'https://webk.telegram.org'].filter(Boolean), credentials: true },
 });
 setupSocket(io);
 

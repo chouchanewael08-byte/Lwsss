@@ -13,8 +13,8 @@ export const depositSchema = z.object({
 
 export const withdrawSchema = z.object({
   amount:  z.coerce.number().positive().min(1).max(1_000_000),
-  method:  z.enum(['baridimob','ccp','usdt','binance','flexy']),
-  details: z.string().max(500).optional(),
+  paymentMethod: z.enum(['baridimob','ccp','usdt','binance','flexy']),
+  accountInfo: z.string().max(500).optional(),
 });
 
 // ─── Ticket ───────────────────────────────────────────────────

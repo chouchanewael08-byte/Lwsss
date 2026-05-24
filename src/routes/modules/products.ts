@@ -8,6 +8,7 @@ import { uploadLimit } from '../../lib/rateLimits.js';
 import { Response } from 'express';
 
 const router = Router();
+const escapeRx = (s: string) => s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
 const auth = [validateTelegramInitData, loadUser];
 
 // GET all products (public)
@@ -19,10 +20,7 @@ router.get('/', auth, async (req: TgRequest, res: Response) => {
 
     const filter: any = { isHidden: false, isApproved: true };
     if (type) filter.type = type;
-    if (search) filter.$or = [
-      { title: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } }
-    ];
+    if (search) { const s = escapeRx(String(search).slice(0, 100)); filter.$or = [{ title: { $regex: s, $options: 'i' } }, { description: { $regex: s, $options: 'i' } }]; }
 
     const sortMap: Record<string, any> = {
       newest: { createdAt: -1 },

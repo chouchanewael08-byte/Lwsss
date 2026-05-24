@@ -13,6 +13,7 @@ const TransactionSchema = new Schema({
   status:        { type: String, enum: ['pending','completed','failed','frozen'], default: 'pending' },
   description:   { type: String, required: true, maxlength: 300 },
   paymentMethod: { type: String, default: null },
+  reference:     { type: String, default: null },
   proofImage:    { type: String, default: null },
 }, { timestamps: true }); // createdAt بدلاً من timestamp يدوي
 

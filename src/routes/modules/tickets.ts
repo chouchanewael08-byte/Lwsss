@@ -6,6 +6,7 @@ import { Ticket, Wallet, User, Product, AccountProduct, Coupon, Transaction } fr
 import { getCrystalPriceUSD, getCommissionPercent, getSetting, emitToUser } from '../../lib/helpers.js';
 import { decryptCredentials } from '../../lib/crypto.js';
 import { validate, ticketCreateSchema } from '../../lib/validation.js';
+import { purchaseLimit } from '../../lib/rateLimits.js';
 
 const router = Router();
 const auth = [validateTelegramInitData, loadUser];
@@ -48,7 +49,7 @@ router.get('/:id', auth, async (req: TgRequest, res: Response) => {
   res.json({ ...ticket.toObject(), credentials });
 });
 
-router.post('/', auth, validate(ticketCreateSchema), async (req: TgRequest, res: Response) => {
+router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: TgRequest, res: Response) => {
   const session = await mongoose.startSession();
   let responded = false;
   try {
