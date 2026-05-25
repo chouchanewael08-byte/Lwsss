@@ -52,6 +52,7 @@ router.get('/:id', auth, async (req: TgRequest, res: Response) => {
 router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: TgRequest, res: Response) => {
   let responded = false;
   try {
+    await (async () => {
       const { productId, productType, paymentMethod, couponCode } = req.body;
       const buyer = req.dbUser;
 
@@ -130,13 +131,15 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
         return;
       }
       throw Object.assign(new Error('طريقة دفع غير مدعومة'), { status: 400 });
-      } catch (err: any) {
+    })();
+  } catch (err: any) {
     if (!responded) res.status(err.status || 500).json({ error: err.message || 'خطأ في إنشاء الطلب' });
-  } catch(e: any) { throw e; }
+  } catch(e:any){throw e;}
 });
 
 router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
   try {
+    await (async () => {
       const ticket = await Ticket.findById(req.params.id).session(session);
       if (!ticket) throw Object.assign(new Error('غير موجود'), { status: 404 });
       if (ticket.buyerId !== req.dbUser.telegramId) throw Object.assign(new Error('غير مصرح'), { status: 403 });
@@ -158,9 +161,10 @@ router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
         User.findOneAndUpdate({ telegramId: ticket.buyerId  }, { $inc: { purchasesCount: 1 } }),
       ]);
       emitToUser(`user:${ticket.sellerId}`, 'ticket_completed', { ticketId: ticket._id, amount: ticket.netAmount });
-        res.json({ success: true, message: 'تم تأكيد الاستلام وإتمام الصفقة' });
+    })();
+    res.json({ success: true, message: 'تم تأكيد الاستلام وإتمام الصفقة' });
   } catch (err: any) { res.status(err.status || 500).json({ error: err.message || 'خطأ' }); }
-  finally { session.endSession(); }
+  finally { }
 });
 
 router.post('/:id/reveal-partial', auth, async (req: TgRequest, res: Response) => {
@@ -231,6 +235,7 @@ router.post('/:id/message', auth, async (req: TgRequest, res: Response) => {
 
 router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Response) => {
   try {
+    await (async () => {
       const { resolution, note } = req.body;
       const ticket = await Ticket.findById(req.params.id).session(session);
       if (!ticket) throw Object.assign(new Error('غير موجود'), { status: 404 });
@@ -259,9 +264,10 @@ router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Respons
       }
       emitToUser(`user:${ticket.buyerId}`,  'dispute_resolved', { ticketId: ticket._id, resolution });
       emitToUser(`user:${ticket.sellerId}`, 'dispute_resolved', { ticketId: ticket._id, resolution });
-        res.json({ success: true });
+    })();
+    res.json({ success: true });
   } catch (err: any) { res.status(err.status||500).json({ error: err.message||'خطأ' }); }
-  finally { session.endSession(); }
+  finally { }
 });
 
 export default router;

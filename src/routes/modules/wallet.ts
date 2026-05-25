@@ -84,6 +84,7 @@ router.post('/withdraw', auth, withdrawLimit, validate(withdrawSchema), async (r
 
 router.post('/admin/confirm-deposit', auth, ensureAdmin, async (req: TgRequest, res: Response) => {
   try {
+    await (async () => {
       const { userId, amount, reference } = req.body;
       if (!userId || !amount || !reference) throw Object.assign(new Error('بيانات ناقصة'), { status: 400 });
       const tx = await Transaction.findOneAndUpdate(
@@ -95,10 +96,11 @@ router.post('/admin/confirm-deposit', auth, ensureAdmin, async (req: TgRequest, 
       await Wallet.findOneAndUpdate({ userId }, { $inc: { crystals: +amount } });
       await User.findOneAndUpdate({ telegramId: userId }, { $inc: { crystals: +amount } });
       emitToUser(`user:${userId}`, 'deposit_confirmed', { amount: +amount });
-        res.json({ success: true });
+    })();
+    res.json({ success: true });
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message || 'خطأ' });
-  } catch(e: any) { throw e; }
+  } catch(e:any){throw e;}
 });
 
 export default router;
