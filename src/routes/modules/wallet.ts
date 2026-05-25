@@ -83,27 +83,22 @@ router.post('/withdraw', auth, withdrawLimit, validate(withdrawSchema), async (r
 });
 
 router.post('/admin/confirm-deposit', auth, ensureAdmin, async (req: TgRequest, res: Response) => {
-  const session = await mongoose.startSession();
   try {
-    await session.withTransaction(async () => {
       const { userId, amount, reference } = req.body;
       if (!userId || !amount || !reference) throw Object.assign(new Error('بيانات ناقصة'), { status: 400 });
       const tx = await Transaction.findOneAndUpdate(
         { userId, reference, status: 'pending' },
         { status: 'completed' },
-        { new: true, session }
+        { new: true}
       );
       if (!tx) throw Object.assign(new Error('طلب غير موجود أو مُعالَج'), { status: 404 });
-      await Wallet.findOneAndUpdate({ userId }, { $inc: { crystals: +amount } }, { session });
-      await User.findOneAndUpdate({ telegramId: userId }, { $inc: { crystals: +amount } }, { session });
+      await Wallet.findOneAndUpdate({ userId }, { $inc: { crystals: +amount } });
+      await User.findOneAndUpdate({ telegramId: userId }, { $inc: { crystals: +amount } });
       emitToUser(`user:${userId}`, 'deposit_confirmed', { amount: +amount });
-    });
-    res.json({ success: true });
+        res.json({ success: true });
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message || 'خطأ' });
-  } finally {
-    session.endSession();
-  }
+  } catch(e: any) { throw e; }
 });
 
 export default router;

@@ -50,10 +50,8 @@ router.get('/:id', auth, async (req: TgRequest, res: Response) => {
 });
 
 router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: TgRequest, res: Response) => {
-  const session = await mongoose.startSession();
   let responded = false;
   try {
-    await session.withTransaction(async () => {
       const { productId, productType, paymentMethod, couponCode } = req.body;
       const buyer = req.dbUser;
 
@@ -76,7 +74,7 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
             $expr: { $lt: ['$usedCount','$maxUses'] }, usedBy: { $nin: [buyer.telegramId] },
             $or: [{ appliesTo: 'all' }, { appliesTo: productType }] },
           { $inc: { usedCount: 1 }, $push: { usedBy: buyer.telegramId } },
-          { new: true, session },
+          { new: true},
         );
         if (!coupon) throw Object.assign(new Error('الكوبون غير صالح أو مستخدم'), { status: 400 });
         discountApplied = coupon.discountType === 'percent'
@@ -93,7 +91,7 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
         const buyerWallet = await Wallet.findOneAndUpdate(
           { userId: buyer.telegramId, crystals: { $gte: finalPrice } },
           { $inc: { crystals: -finalPrice, frozenCrystals: finalPrice } },
-          { new: true, session },
+          { new: true},
         );
         if (!buyerWallet)
           throw Object.assign(new Error(`رصيدك غير كافٍ. المطلوب 💎${finalPrice}`), { status: 400 });
@@ -109,7 +107,7 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
           autoCompleteAt: new Date(Date.now() + 3*24*60*60*1000),
           messages: [{ senderId: 'system', senderName: 'النظام', senderRole: 'system',
             text: `✅ تم تأكيد الدفع: 💎${finalPrice}${discountApplied ? ` (خصم 💎${discountApplied})` : ''}`, isSystemMessage: true, timestamp: new Date() }],
-        }], { session });
+        }]);
 
         emitToUser(`user:${prod.sellerId}`, 'new_ticket', { ticketId: ticket._id, productTitle: prod.title, amount: finalPrice, buyerName: buyer.username });
         if (!responded) { responded = true; res.json({ success: true, ticket, paymentConfirmed: true }); }
@@ -127,21 +125,18 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
           autoCompleteAt: new Date(Date.now() + 5*24*60*60*1000),
           messages: [{ senderId: 'system', senderName: 'النظام', senderRole: 'system',
             text: `📋 أرسل إيصال التحويل للأدمن لتأكيد الدفع.`, isSystemMessage: true, timestamp: new Date() }],
-        }], { session });
+        }]);
         if (!responded) { responded = true; res.json({ success: true, ticket, paymentConfirmed: false, paymentInfo }); }
         return;
       }
       throw Object.assign(new Error('طريقة دفع غير مدعومة'), { status: 400 });
-    });
-  } catch (err: any) {
+      } catch (err: any) {
     if (!responded) res.status(err.status || 500).json({ error: err.message || 'خطأ في إنشاء الطلب' });
-  } finally { session.endSession(); }
+  } catch(e: any) { throw e; }
 });
 
 router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
-  const session = await mongoose.startSession();
   try {
-    await session.withTransaction(async () => {
       const ticket = await Ticket.findById(req.params.id).session(session);
       if (!ticket) throw Object.assign(new Error('غير موجود'), { status: 404 });
       if (ticket.buyerId !== req.dbUser.telegramId) throw Object.assign(new Error('غير مصرح'), { status: 403 });
@@ -150,22 +145,20 @@ router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
 
       await Promise.all([
         Wallet.findOneAndUpdate({ userId: ticket.buyerId },
-          { $inc: { frozenCrystals: -ticket.amount } }, { session }),
+          { $inc: { frozenCrystals: -ticket.amount } }),
         Wallet.findOneAndUpdate({ userId: ticket.sellerId },
-          { $inc: { crystals: ticket.netAmount, totalEarned: ticket.netAmount } }, { session }),
+          { $inc: { crystals: ticket.netAmount, totalEarned: ticket.netAmount } }),
         createTx(ticket.buyerId,  'purchase_complete', ticket.amount,    'crystals', `إتمام شراء: ${ticket.productTitle}`, 'completed', session),
         createTx(ticket.sellerId, 'sale',              ticket.netAmount,  'crystals', `بيع ناجح: ${ticket.productTitle}`,   'completed', session),
         Ticket.findByIdAndUpdate(ticket._id,
           { status: 'completed', buyerConfirmed: true, completedAt: new Date(),
             $push: { messages: { senderId: 'system', senderName: 'النظام', senderRole: 'system',
-              text: '✅ أكد المشتري الاستلام. تمت الصفقة!', isSystemMessage: true, timestamp: new Date() } } },
-          { session }),
-        User.findOneAndUpdate({ telegramId: ticket.sellerId }, { $inc: { salesCount: 1, totalEarnings: ticket.netAmount } }, { session }),
-        User.findOneAndUpdate({ telegramId: ticket.buyerId  }, { $inc: { purchasesCount: 1 } }, { session }),
+              text: '✅ أكد المشتري الاستلام. تمت الصفقة!', isSystemMessage: true, timestamp: new Date() } } }),
+        User.findOneAndUpdate({ telegramId: ticket.sellerId }, { $inc: { salesCount: 1, totalEarnings: ticket.netAmount } }),
+        User.findOneAndUpdate({ telegramId: ticket.buyerId  }, { $inc: { purchasesCount: 1 } }),
       ]);
       emitToUser(`user:${ticket.sellerId}`, 'ticket_completed', { ticketId: ticket._id, amount: ticket.netAmount });
-    });
-    res.json({ success: true, message: 'تم تأكيد الاستلام وإتمام الصفقة' });
+        res.json({ success: true, message: 'تم تأكيد الاستلام وإتمام الصفقة' });
   } catch (err: any) { res.status(err.status || 500).json({ error: err.message || 'خطأ' }); }
   finally { session.endSession(); }
 });
@@ -237,9 +230,7 @@ router.post('/:id/message', auth, async (req: TgRequest, res: Response) => {
 });
 
 router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Response) => {
-  const session = await mongoose.startSession();
   try {
-    await session.withTransaction(async () => {
       const { resolution, note } = req.body;
       const ticket = await Ticket.findById(req.params.id).session(session);
       if (!ticket) throw Object.assign(new Error('غير موجود'), { status: 404 });
@@ -248,30 +239,27 @@ router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Respons
       if (resolution === 'refund') {
         if (ticket.paymentMethod === 'crystals') {
           await Wallet.findOneAndUpdate({ userId: ticket.buyerId },
-            { $inc: { crystals: ticket.amount, frozenCrystals: -ticket.amount } }, { session });
+            { $inc: { crystals: ticket.amount, frozenCrystals: -ticket.amount } });
           await createTx(ticket.buyerId, 'refund', ticket.amount, 'crystals', `استرجاع نزاع: ${ticket.productTitle}`, 'completed', session);
         }
         await Ticket.findByIdAndUpdate(ticket._id,
           { status: 'refunded',
             $push: { messages: { senderId: 'system', senderName: 'النظام', senderRole: 'admin',
-              text: `↩️ قرار الأدمن: رد الأموال للمشتري.\n${note||''}`, isSystemMessage: true, timestamp: new Date() } } },
-          { session });
+              text: `↩️ قرار الأدمن: رد الأموال للمشتري.\n${note||''}`, isSystemMessage: true, timestamp: new Date() } } });
       } else {
         if (ticket.paymentMethod === 'crystals') {
-          await Wallet.findOneAndUpdate({ userId: ticket.buyerId }, { $inc: { frozenCrystals: -ticket.amount } }, { session });
-          await Wallet.findOneAndUpdate({ userId: ticket.sellerId }, { $inc: { crystals: ticket.netAmount } }, { session });
+          await Wallet.findOneAndUpdate({ userId: ticket.buyerId }, { $inc: { frozenCrystals: -ticket.amount } });
+          await Wallet.findOneAndUpdate({ userId: ticket.sellerId }, { $inc: { crystals: ticket.netAmount } });
           await createTx(ticket.sellerId, 'sale', ticket.netAmount, 'crystals', `إتمام نزاع: ${ticket.productTitle}`, 'completed', session);
         }
         await Ticket.findByIdAndUpdate(ticket._id,
           { status: 'completed', completedAt: new Date(),
             $push: { messages: { senderId: 'system', senderName: 'النظام', senderRole: 'admin',
-              text: `✅ قرار الأدمن: إتمام لصالح البائع.\n${note||''}`, isSystemMessage: true, timestamp: new Date() } } },
-          { session });
+              text: `✅ قرار الأدمن: إتمام لصالح البائع.\n${note||''}`, isSystemMessage: true, timestamp: new Date() } } });
       }
       emitToUser(`user:${ticket.buyerId}`,  'dispute_resolved', { ticketId: ticket._id, resolution });
       emitToUser(`user:${ticket.sellerId}`, 'dispute_resolved', { ticketId: ticket._id, resolution });
-    });
-    res.json({ success: true });
+        res.json({ success: true });
   } catch (err: any) { res.status(err.status||500).json({ error: err.message||'خطأ' }); }
   finally { session.endSession(); }
 });
