@@ -57,13 +57,13 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
 
       const prod = await (productType === 'accounts'
         ? AccountProduct.findById(productId)
-        : Product.findById(productId)).session(session);
+        : Product.findById(productId));
       if (!prod || !prod.isApproved || prod.isHidden)
         throw Object.assign(new Error('المنتج غير متاح'), { status: 404 });
       if (prod.sellerId === buyer.telegramId)
         throw Object.assign(new Error('لا يمكنك شراء منتجك'), { status: 400 });
 
-      const seller = await User.findOne({ telegramId: prod.sellerId }).session(session);
+      const seller = await User.findOne({ telegramId: prod.sellerId });
       if (!seller) throw Object.assign(new Error('البائع غير موجود'), { status: 404 });
 
       let finalPrice = prod.price;
@@ -96,7 +96,7 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
         if (!buyerWallet)
           throw Object.assign(new Error(`رصيدك غير كافٍ. المطلوب 💎${finalPrice}`), { status: 400 });
 
-        await createTx(buyer.telegramId, 'purchase_hold', finalPrice, 'crystals', `حجز شراء: ${prod.title}`, 'frozen', session);
+        await createTx(buyer.telegramId, 'purchase_hold', finalPrice, 'crystals', `حجز شراء: ${prod.title}`, 'frozen');
 
         const [ticket] = await Ticket.create([{
           productId, productTitle: prod.title, productType,
@@ -132,12 +132,12 @@ router.post('/', auth, purchaseLimit, validate(ticketCreateSchema), async (req: 
       throw Object.assign(new Error('طريقة دفع غير مدعومة'), { status: 400 });
       } catch (err: any) {
     if (!responded) res.status(err.status || 500).json({ error: err.message || 'خطأ في إنشاء الطلب' });
-  } catch(e: any) { throw e; }
+  }
 });
 
 router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
   try {
-      const ticket = await Ticket.findById(req.params.id).session(session);
+      const ticket = await Ticket.findById(req.params.id);
       if (!ticket) throw Object.assign(new Error('غير موجود'), { status: 404 });
       if (ticket.buyerId !== req.dbUser.telegramId) throw Object.assign(new Error('غير مصرح'), { status: 403 });
       if (!['full_revealed','partial_revealed'].includes(ticket.status))
@@ -148,8 +148,8 @@ router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
           { $inc: { frozenCrystals: -ticket.amount } }),
         Wallet.findOneAndUpdate({ userId: ticket.sellerId },
           { $inc: { crystals: ticket.netAmount, totalEarned: ticket.netAmount } }),
-        createTx(ticket.buyerId,  'purchase_complete', ticket.amount,    'crystals', `إتمام شراء: ${ticket.productTitle}`, 'completed', session),
-        createTx(ticket.sellerId, 'sale',              ticket.netAmount,  'crystals', `بيع ناجح: ${ticket.productTitle}`,   'completed', session),
+        createTx(ticket.buyerId,  'purchase_complete', ticket.amount,    'crystals', `إتمام شراء: ${ticket.productTitle}`, 'completed'),
+        createTx(ticket.sellerId, 'sale',              ticket.netAmount,  'crystals', `بيع ناجح: ${ticket.productTitle}`,   'completed'),
         Ticket.findByIdAndUpdate(ticket._id,
           { status: 'completed', buyerConfirmed: true, completedAt: new Date(),
             $push: { messages: { senderId: 'system', senderName: 'النظام', senderRole: 'system',
@@ -160,7 +160,6 @@ router.post('/:id/confirm', auth, async (req: TgRequest, res: Response) => {
       emitToUser(`user:${ticket.sellerId}`, 'ticket_completed', { ticketId: ticket._id, amount: ticket.netAmount });
         res.json({ success: true, message: 'تم تأكيد الاستلام وإتمام الصفقة' });
   } catch (err: any) { res.status(err.status || 500).json({ error: err.message || 'خطأ' }); }
-  finally { session.endSession(); }
 });
 
 router.post('/:id/reveal-partial', auth, async (req: TgRequest, res: Response) => {
@@ -232,7 +231,7 @@ router.post('/:id/message', auth, async (req: TgRequest, res: Response) => {
 router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Response) => {
   try {
       const { resolution, note } = req.body;
-      const ticket = await Ticket.findById(req.params.id).session(session);
+      const ticket = await Ticket.findById(req.params.id);
       if (!ticket) throw Object.assign(new Error('غير موجود'), { status: 404 });
       if (ticket.status !== 'disputed') throw Object.assign(new Error('الطلب ليس في نزاع'), { status: 400 });
 
@@ -240,7 +239,7 @@ router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Respons
         if (ticket.paymentMethod === 'crystals') {
           await Wallet.findOneAndUpdate({ userId: ticket.buyerId },
             { $inc: { crystals: ticket.amount, frozenCrystals: -ticket.amount } });
-          await createTx(ticket.buyerId, 'refund', ticket.amount, 'crystals', `استرجاع نزاع: ${ticket.productTitle}`, 'completed', session);
+          await createTx(ticket.buyerId, 'refund', ticket.amount, 'crystals', `استرجاع نزاع: ${ticket.productTitle}`, 'completed');
         }
         await Ticket.findByIdAndUpdate(ticket._id,
           { status: 'refunded',
@@ -250,7 +249,7 @@ router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Respons
         if (ticket.paymentMethod === 'crystals') {
           await Wallet.findOneAndUpdate({ userId: ticket.buyerId }, { $inc: { frozenCrystals: -ticket.amount } });
           await Wallet.findOneAndUpdate({ userId: ticket.sellerId }, { $inc: { crystals: ticket.netAmount } });
-          await createTx(ticket.sellerId, 'sale', ticket.netAmount, 'crystals', `إتمام نزاع: ${ticket.productTitle}`, 'completed', session);
+          await createTx(ticket.sellerId, 'sale', ticket.netAmount, 'crystals', `إتمام نزاع: ${ticket.productTitle}`, 'completed');
         }
         await Ticket.findByIdAndUpdate(ticket._id,
           { status: 'completed', completedAt: new Date(),
@@ -261,7 +260,6 @@ router.post('/:id/resolve', auth, ensureMod, async (req: TgRequest, res: Respons
       emitToUser(`user:${ticket.sellerId}`, 'dispute_resolved', { ticketId: ticket._id, resolution });
         res.json({ success: true });
   } catch (err: any) { res.status(err.status||500).json({ error: err.message||'خطأ' }); }
-  finally { session.endSession(); }
 });
 
 export default router;

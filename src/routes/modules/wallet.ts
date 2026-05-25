@@ -98,7 +98,7 @@ router.post('/admin/confirm-deposit', auth, ensureAdmin, async (req: TgRequest, 
         res.json({ success: true });
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message || 'خطأ' });
-  } catch(e: any) { throw e; }
+  }
 });
 
 export default router;
